@@ -1,0 +1,97 @@
+# ===== Secrets / 私钥（绝对不能提交）=====
+.env
+.env.*
+!.env.example
+*.age
+*.sops.yaml
+*.key
+*.pem
+*.pfx
+*.p12
+*-private.key
+license_signing_key*
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# pyenv / venv
+.venv/
+venv/
+env/
+.python-version
+
+# pytest / coverage / mypy / ruff
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.cache
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# ===== Node / Next.js =====
+node_modules/
+.next/
+out/
+build/
+dist/
+.npm/
+.pnpm-store/
+.yarn/
+.turbo/
+
+# ===== IDE / OS =====
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Docker / 数据卷 =====
+deploy/database/postgres/data/*
+!deploy/database/postgres/data/.gitkeep
+deploy/cache/redis/data/*
+!deploy/cache/redis/data/.gitkeep
+
+# ===== 构建产物 =====
+*.log
+*.pid
+*.seed
+*.tgz
+.cache/
+.tmp/
+
+# ===== 安全扫描报告 =====
+bandit-report.*
+semgrep-report.*
+pip-audit-report.*
+sbom*.json
+sbom*.spdx.json

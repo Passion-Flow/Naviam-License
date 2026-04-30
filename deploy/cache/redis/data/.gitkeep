@@ -1,0 +1,2 @@
+# Redis 数据卷（AOF + RDB）
+# 不要手动改这里的文件；备份请使用 redis-cli --rdb 或快照。

@@ -1,0 +1,14 @@
+[
+  {
+    "model": "products.product",
+    "pk": "00000000-0000-0000-0000-000000000001",
+    "fields": {
+      "code": "default",
+      "display_name": "Default Product",
+      "description": "第一版默认产品；仅一条记录。后续接入第二个产品时通过 admin 或迁移 fixtures 添加。",
+      "schema_version": 1,
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
+    }
+  }
+]

@@ -1,0 +1,2 @@
+-r base.txt
+# Prod 不引入 dev 工具；如需运行迁移与 collectstatic，由 CI / 容器入口脚本执行。

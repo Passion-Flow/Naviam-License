@@ -1,0 +1,32 @@
+[project]
+name = "license-api"
+version = "0.1.0"
+description = "License Console API (Django 5 + DRF)"
+requires-python = ">=3.12"
+readme = "README.md"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "S", "C4", "RUF"]
+ignore = ["S101"]  # tests use assert
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["mypy_django_plugin.main"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.dev"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["test_*.py"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]

@@ -1,0 +1,11 @@
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+from .views import LicenseViewSet
+
+router = DefaultRouter()
+router.register("", LicenseViewSet, basename="license")
+
+urlpatterns = [
+    path("", include(router.urls)),
+]
