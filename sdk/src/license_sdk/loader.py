@@ -1,22 +1,25 @@
-"""从磁盘加载 License 与 公钥。
+"""从磁盘加载 License 与公钥。
 
-License 文件格式：
-- offline 包是一个 JSON 文件，结构：
-  {
-    "schema_version": 1,
-    "payload_cbor_b64": "...",  // base64 of canonical CBOR(license_payload)
-    "signature_b64": "...",     // base64 of Ed25519 signature
-    "kid": "..."
-  }
+License 文件格式（与 docs/security/crypto-spec.md §4 + 后端 codec.py 对齐）：
 
-不做格式协商；版本不匹配 -> SchemaVersionUnsupported。
+    *.lic 文件 = base64url( CBOR( {
+        v: 1,
+        payload: payload_canonical_bytes,
+        sig: signature_64_bytes,
+        kid: kid_str,
+    } ) )
+
+文件内容是 ASCII 文本（无 padding "="），可跨平台传输；不做编码协商。
+任何不符合本格式的文件 → SchemaVersionUnsupported / LicenseSDKError。
 """
 from __future__ import annotations
 
 import base64
-import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+import cbor2
 
 from .errors import LicenseSDKError, SchemaVersionUnsupported
 
@@ -25,29 +28,63 @@ SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({1})
 
 @dataclass(frozen=True)
 class LicenseEnvelope:
-    schema_version: int
+    schema_version: int  # = envelope["v"]
     payload_cbor: bytes
     signature: bytes
     kid: str
 
 
+def _b64url_decode(text: str) -> bytes:
+    """base64url 解码（容忍无 padding）。任何错误 → LicenseSDKError。"""
+    s = text.strip()
+    if not s:
+        raise LicenseSDKError("license file is empty")
+    pad = (-len(s)) % 4
+    try:
+        return base64.urlsafe_b64decode(s + ("=" * pad))
+    except (ValueError, TypeError) as exc:
+        raise LicenseSDKError("license file is not valid base64url") from exc
+
+
 def load_license_file(path: str | Path) -> LicenseEnvelope:
+    """读取 *.lic 文件，解码 envelope，但不验签。
+
+    解析顺序：
+      1. 文件 → ASCII 文本
+      2. base64url 解码 → CBOR envelope_bytes
+      3. CBOR 解包 → dict({v, payload, sig, kid})
+      4. 字段校验：v ∈ SUPPORTED；payload/sig 是 bytes；kid 是 str
+    """
     raw = Path(path).read_bytes()
     try:
-        obj = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise LicenseSDKError("license file is not valid JSON") from exc
+        text = raw.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise LicenseSDKError("license file is not ASCII text") from exc
 
-    schema_version = obj.get("schema_version")
-    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
-        raise SchemaVersionUnsupported(f"unsupported schema_version={schema_version!r}")
+    envelope_bytes = _b64url_decode(text)
 
     try:
-        payload = base64.b64decode(obj["payload_cbor_b64"], validate=True)
-        signature = base64.b64decode(obj["signature_b64"], validate=True)
-        kid = str(obj["kid"])
-    except (KeyError, ValueError) as exc:
-        raise LicenseSDKError("license envelope missing/invalid fields") from exc
+        envelope: Any = cbor2.loads(envelope_bytes)
+    except cbor2.CBORDecodeError as exc:
+        raise LicenseSDKError("license envelope is not valid CBOR") from exc
+
+    if not isinstance(envelope, dict):
+        raise LicenseSDKError("license envelope root is not a CBOR map")
+
+    schema_version = envelope.get("v")
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise SchemaVersionUnsupported(f"unsupported envelope v={schema_version!r}")
+
+    payload = envelope.get("payload")
+    signature = envelope.get("sig")
+    kid = envelope.get("kid")
+
+    if not isinstance(payload, bytes):
+        raise LicenseSDKError("envelope.payload must be bytes")
+    if not isinstance(signature, bytes):
+        raise LicenseSDKError("envelope.sig must be bytes")
+    if not isinstance(kid, str):
+        raise LicenseSDKError("envelope.kid must be str")
 
     return LicenseEnvelope(
         schema_version=int(schema_version),

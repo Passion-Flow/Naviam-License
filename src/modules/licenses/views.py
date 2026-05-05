@@ -46,7 +46,7 @@ class LicenseViewSet(viewsets.ModelViewSet):
         data = ser.validated_data
 
         signer = get_signer()
-        license_obj, activation_code = issue_license(
+        license_obj, artifacts = issue_license(
             product=data["product"],
             customer=data["customer"],
             cloud_id_text=data["cloud_id_text"],
@@ -78,7 +78,8 @@ class LicenseViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 "license": LicenseSerializer(license_obj).data,
-                "activation_code": activation_code,
+                "license_file": artifacts.license_file,
+                "activation_code": artifacts.activation_code,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -90,7 +91,7 @@ class LicenseViewSet(viewsets.ModelViewSet):
         ser.is_valid(raise_exception=True)
 
         signer = get_signer()
-        activation_code = renew_license(
+        artifacts = renew_license(
             license_obj,
             new_expires_at=ser.validated_data["expires_at"],
             signer=signer,
@@ -116,7 +117,8 @@ class LicenseViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 "license": LicenseSerializer(license_obj).data,
-                "activation_code": activation_code,
+                "license_file": artifacts.license_file,
+                "activation_code": artifacts.activation_code,
             },
             status=status.HTTP_200_OK,
         )

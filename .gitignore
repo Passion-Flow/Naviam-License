@@ -12,23 +12,24 @@
 license_signing_key*
 
 # ===== Python =====
+# 用前缀斜杠锚定到根目录，避免误伤 apps/web/src/lib/ 等非 Python 路径
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -59,8 +60,6 @@ coverage.xml
 node_modules/
 .next/
 out/
-build/
-dist/
 .npm/
 .pnpm-store/
 .yarn/

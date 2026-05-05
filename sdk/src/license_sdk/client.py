@@ -39,7 +39,7 @@ class LicenseClient:
     """License 校验客户端。
 
     使用：
-        client = LicenseClient.from_file(license_path=..., pubkey_path=..., product_id=...)
+        client = LicenseClient.from_file(license_path=..., pubkey_path=..., product_code=...)
         status = client.verify()
     """
 
@@ -47,14 +47,14 @@ class LicenseClient:
         self,
         envelope: LicenseEnvelope,
         public_key_pem: bytes,
-        product_id: str,
+        product_code: str,
         cloud_id: str | None = None,
         grace_seconds: int = 30 * 24 * 3600,
         online: OnlineConfig | None = None,
     ) -> None:
         self._envelope = envelope
         self._public_key = load_public_key_pem(public_key_pem)
-        self._product_id = product_id
+        self._product_code = product_code
         self._cloud_id = cloud_id
         self._grace_seconds = grace_seconds
         self._online = online  # 心跳实现 V1 阶段补全
@@ -65,7 +65,7 @@ class LicenseClient:
         *,
         license_path: str | Path,
         pubkey_path: str | Path,
-        product_id: str,
+        product_code: str,
         cloud_id: str | None = None,
         grace_seconds: int = 30 * 24 * 3600,
         online: OnlineConfig | None = None,
@@ -75,7 +75,7 @@ class LicenseClient:
         return cls(
             envelope=envelope,
             public_key_pem=public_key_pem,
-            product_id=product_id,
+            product_code=product_code,
             cloud_id=cloud_id,
             grace_seconds=grace_seconds,
             online=online,
@@ -104,13 +104,13 @@ class LicenseClient:
         # 3. 语义校验。
         result: ValidationResult = validate_payload(
             payload,
-            expected_product_id=self._product_id,
+            expected_product_code=self._product_code,
             expected_cloud_id=self._cloud_id,
             now=now,
             grace_seconds=self._grace_seconds,
         )
 
-        not_after_dt = _parse_iso_or_none(payload.get("not_after"))
+        not_after_dt = _unix_to_datetime(payload.get("not_after"))
         grace_until_dt = (
             datetime.fromtimestamp(
                 not_after_dt.timestamp() + self._grace_seconds, tz=timezone.utc
@@ -127,11 +127,12 @@ class LicenseClient:
         )
 
 
-def _parse_iso_or_none(ts: object) -> datetime | None:
-    if not isinstance(ts, str):
+def _unix_to_datetime(ts: object) -> datetime | None:
+    """payload['not_after'] 是 unix-seconds（int / 整数 float）；其他形态返回 None。"""
+    if isinstance(ts, bool):
         return None
-    s = ts[:-1] + "+00:00" if ts.endswith("Z") else ts
-    try:
-        return datetime.fromisoformat(s).astimezone(timezone.utc)
-    except ValueError:
-        return None
+    if isinstance(ts, int):
+        return datetime.fromtimestamp(ts, tz=timezone.utc)
+    if isinstance(ts, float) and ts.is_integer():
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    return None

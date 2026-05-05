@@ -15,10 +15,15 @@ from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    permission_classes,
+    throttle_classes,
+)
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import LoginAttempt, User
 from .permissions import IsSuperAdmin
@@ -55,6 +60,7 @@ def _client_ua(request: Request) -> str | None:
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def login_view(request: Request) -> Response:
     ser = LoginSerializer(data=request.data, context={"request": request})
     if not ser.is_valid():
@@ -103,8 +109,15 @@ def login_view(request: Request) -> Response:
     )
 
 
+# ScopedRateThrottle 在每次请求时从 view 实例上读 throttle_scope；
+# @api_view 会把 function 包成 WrappedAPIView 类，所以 throttle_scope 必须挂到
+# .cls 而不是 function 对象本身（function 上的属性不会传递到 class）。
+login_view.cls.throttle_scope = "auth_login"
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def totp_verify_view(request: Request) -> Response:
     pending_id = request.session.get("pending_2fa_user_id")
     if not pending_id:
@@ -167,6 +180,9 @@ def totp_verify_view(request: Request) -> Response:
     )
 
 
+totp_verify_view.cls.throttle_scope = "auth_totp"
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request: Request) -> Response:
@@ -195,6 +211,7 @@ def me_view(request: Request) -> Response:
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def change_password_view(request: Request) -> Response:
     ser = ChangePasswordSerializer(data=request.data, context={"request": request})
     ser.is_valid(raise_exception=True)
@@ -205,6 +222,9 @@ def change_password_view(request: Request) -> Response:
         {"detail": "password changed; please re-login"},
         status=status.HTTP_200_OK,
     )
+
+
+change_password_view.cls.throttle_scope = "auth_change_password"
 
 
 @api_view(["GET"])

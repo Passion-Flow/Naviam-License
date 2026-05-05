@@ -22,7 +22,7 @@ class Revoked(LicenseSDKError):
 
 
 class ProductMismatch(LicenseSDKError):
-    """License 的 product_id 与 SDK 调用方声明的 product_id 不一致。"""
+    """License 的 product_code 与 SDK 调用方声明的 product_code 不一致。"""
 
 
 class SchemaVersionUnsupported(LicenseSDKError):

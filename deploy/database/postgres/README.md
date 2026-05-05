@@ -11,20 +11,21 @@
 
 ```bash
 cd projects/license/deploy/database/postgres
-cp .env.example .env  # 填入 POSTGRES_PASSWORD（≥ 24 字节随机）
+cp .env.example .env  # 默认 username/db = naviam_license, password = Postgres@!QAZxsw2.（仅本地）
 docker compose up -d
 ```
 
 ## 关键约束
 
 - 仅监听内部网络：`127.0.0.1:5432` 或 docker overlay；不允许暴露公网。
-- Postgres 角色分层：
-  - `license_owner`：执行迁移；密码仅迁移期内可用。
-  - `license_app`：API 运行时使用；只能读写应用表，禁 DDL。
-  - `license_ro`：审计 / 报表只读。
-- 加密：传输强制 `sslmode=verify-full`；存储依赖卷加密（OS / LUKS）。
+- 命名规范（与团队约定一致）：
+  - DB / username 都 = `naviam_<project>`（License 项目即 `naviam_license`）
+  - 密码 = `<Service>@!QAZxsw2.`（dev 默认；生产由 secrets 注入）
+- V1 单角色：`naviam_license` 同时承担迁移 + 应用 + 只读（V1 没必要分层增加运维复杂度）。
+- V2 拆分预留：`naviam_license_ro`（只读报表）、`naviam_license_repl`（复制）— pg_hba.conf 已留注释。
+- 加密：传输强制 `sslmode=verify-full`（settings 里读 `prefer`，跨主机部署需改 verify-full）；存储依赖卷加密（OS / LUKS）。
 - 密码、复制 slot、备份口令通过 secrets 注入；禁止写入 compose 文件。
-- 备份：`pg_basebackup` + WAL 归档到对象存储或异地磁盘；定期演练恢复。
+- 备份：`pg_basebackup` + WAL 归档到对象存储或异地磁盘；定期演练恢复（V1 dev 默认关闭 WAL 归档，需要时在 postgresql.conf 解开 `archive_mode = on` 并预创建 archive 目录）。
 
 ## 监控指标（V1 必采）
 

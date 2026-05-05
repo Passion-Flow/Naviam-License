@@ -2,6 +2,7 @@ version: "3.9"
 
 # Postgres 16 — License Console 主数据库
 # 仅监听内部网络；密码通过 .env 注入。
+# 命名规范：username/db = naviam_<project>；password = <Service>@!QAZxsw2.
 
 services:
   postgres:
@@ -9,8 +10,9 @@ services:
     container_name: license_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-license}
-      POSTGRES_USER: ${POSTGRES_USER:-license_owner}
+      # postgres 官方镜像约定的变量名（左）：项目统一变量名（右）
+      POSTGRES_DB: ${POSTGRES_DB:-naviam_license}
+      POSTGRES_USER: ${POSTGRES_USERNAME:-naviam_license}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
@@ -23,9 +25,9 @@ services:
       -c hba_file=/etc/postgresql/pg_hba.conf
     ports:
       # 仅本机回环；如需跨主机，改为 docker overlay 网络
-      - "127.0.0.1:5432:5432"
+      - "${POSTGRES_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-license_owner} -d ${POSTGRES_DB:-license}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-naviam_license} -d ${POSTGRES_DB:-naviam_license}"]
       interval: 10s
       timeout: 5s
       retries: 5

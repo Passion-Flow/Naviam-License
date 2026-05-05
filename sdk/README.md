@@ -4,8 +4,8 @@ License 校验 SDK（Python，被产品方嵌入）。
 
 ## 职责
 
-- 加载 License 文件（offline 包：JSON + 签名）。
-- 校验：签名（Ed25519）、有效期、product_id、cloud_id_binding、schema_version。
+- 加载 License 文件（offline 包：`base64url(CBOR(envelope))` + 签名）。
+- 校验：签名（Ed25519）、有效期（unix-seconds）、`product_code`、`cloud_id_binding`（32 字节 SHA-256 fingerprint）、`schema_version`。
 - 离线模式：仅本地校验；返回 `LicenseStatus(active|grace|expired|revoked|invalid)`。
 - 在线模式（可选）：调用 Console `/v1/sdk/heartbeat`，刷新 revocation 状态与 grace。
 - 不缓存私钥；不写入磁盘；线程安全。
@@ -19,9 +19,16 @@ License 校验 SDK（Python，被产品方嵌入）。
 ## 安装
 
 ```bash
+# 推荐 — 用 uv.lock（hash-locked）确定性安装
+uv sync                          # 含 dev 工具
+uv pip install -e .              # 仅运行依赖
+
+# 备选 — pip
 pip install license-sdk          # 仅离线校验
 pip install license-sdk[online]  # 包含 httpx，启用心跳
 ```
+
+供应链要求：生产部署必须使用 `uv.lock`，不允许浮动版本（`>=`、`~=`）从 PyPI 直接安装。
 
 ## 用法
 
@@ -30,13 +37,16 @@ from license_sdk import LicenseClient
 
 client = LicenseClient.from_file(
     license_path="/var/lib/myapp/license.lic",
-    pubkey_path="/etc/myapp/license-pubkey.pem",  # vendor public key
-    product_id="default",
+    pubkey_path="/etc/myapp/license-pubkey.pem",   # vendor public key
+    product_code="default",                         # 与签发时一致
+    cloud_id="<runtime-cloud-id>",                  # SDK 启动时本机重新生成的 Cloud ID 文本
 )
 status = client.verify()
 if not status.is_active():
     raise SystemExit("license not active: " + status.reason)
 ```
+
+`cloud_id` 参数：SDK 启动时本机重新生成（含新 nonce/created_at），SDK 内部会抽机器特征字段算 32 字节 fingerprint，与 License payload 内的 `cloud_id_binding` 用 `hmac.compare_digest` 对比。**License 复制到另一台机器，硬件指纹不匹配，自动失效。**
 
 在线模式：
 

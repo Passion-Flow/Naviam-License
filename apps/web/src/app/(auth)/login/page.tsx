@@ -3,20 +3,11 @@
 import { useState } from "react";
 import { Shield, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8081/v1";
+import { apiPost, ApiError, ApiTimeoutError, ApiNetworkError } from "@/lib/api";
 
-function getCsrfToken(): string {
-  if (typeof document === "undefined") return "";
-  const match = document.cookie.match(/csrftoken=([^;]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : "";
-}
-
-function makeHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  const csrf = getCsrfToken();
-  if (csrf) h["X-CSRFToken"] = csrf;
-  return h;
+interface LoginResponse {
+  requires_2fa: boolean;
+  user?: { username: string; email: string };
 }
 
 interface AuthState {
@@ -33,29 +24,31 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [totpCode, setTotpCode] = useState("");
 
+  function explainError(err: unknown, fallback: string): string {
+    if (err instanceof ApiTimeoutError) return "请求超时，请检查后端是否在线";
+    if (err instanceof ApiNetworkError) return "网络错误，请检查后端服务是否启动";
+    if (err instanceof ApiError) return err.message || fallback;
+    return fallback;
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setState({ step: "login", loading: true });
     try {
-      const res = await fetch(`${API_BASE}/auth/login/`, {
-        method: "POST",
-        headers: makeHeaders(),
-        credentials: "include",
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setState({ step: "login", loading: false, error: data.detail || "登录失败" });
-        return;
-      }
+      // apiPost 在 401 时会自动跳 /login，这里我们已经在 /login，所以禁用跳转
+      const data = await apiPost<LoginResponse>(
+        "/auth/login/",
+        { email, password },
+        { redirectOnUnauthorized: false },
+      );
       if (data.requires_2fa) {
         setState({ step: "totp", loading: false });
       } else {
         setState({ step: "done", loading: false, user: data.user });
         window.location.href = "/licenses";
       }
-    } catch {
-      setState({ step: "login", loading: false, error: "网络错误，请检查后端服务是否启动" });
+    } catch (err) {
+      setState({ step: "login", loading: false, error: explainError(err, "登录失败") });
     }
   }
 
@@ -63,21 +56,15 @@ export default function LoginPage() {
     e.preventDefault();
     setState({ ...state, loading: true });
     try {
-      const res = await fetch(`${API_BASE}/auth/totp/`, {
-        method: "POST",
-        headers: makeHeaders(),
-        credentials: "include",
-        body: JSON.stringify({ code: totpCode }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setState({ step: "totp", loading: false, error: data.detail || "验证码错误" });
-        return;
-      }
+      const data = await apiPost<{ user: { username: string; email: string } }>(
+        "/auth/totp/",
+        { code: totpCode },
+        { redirectOnUnauthorized: false },
+      );
       setState({ step: "done", loading: false, user: data.user });
       window.location.href = "/licenses";
-    } catch {
-      setState({ step: "totp", loading: false, error: "网络错误" });
+    } catch (err) {
+      setState({ step: "totp", loading: false, error: explainError(err, "验证码错误") });
     }
   }
 

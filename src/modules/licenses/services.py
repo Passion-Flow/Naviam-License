@@ -10,11 +10,20 @@ from typing import Any
 from django.utils import timezone
 from contracts.signing import IKeySigner
 from modules.accounts.models import User
-from modules.activations.cloud_id_codec import decode as decode_cloud_id
+from modules.activations.cloud_id_codec import (
+    binding_fingerprint,
+    decode as decode_cloud_id,
+)
 from modules.customers.models import Customer
 from modules.products.models import Product
 
-from .codec import encode_activation_code, encode_license_file, encode_license_payload
+from .codec import (
+    LicenseArtifacts,
+    encode_activation_code,
+    encode_license_envelope,
+    encode_license_file,
+    encode_license_payload,
+)
 from .models import License
 
 # 默认 grace = 30 天
@@ -32,10 +41,12 @@ def issue_license(
     notes: str = "",
     not_before: datetime | None = None,
     grace_seconds: int = DEFAULT_GRACE_SECONDS,
-) -> tuple[License, str]:
+) -> tuple[License, LicenseArtifacts]:
     """签发 License。
 
-    返回 (license_instance, activation_code_text)。
+    返回 (license_instance, LicenseArtifacts(license_file, activation_code))。
+    license_file 是 base64url(CBOR(envelope))，可直接写盘为 *.lic 给 SDK 读。
+    activation_code 是 base32 分组的人类可读短码，离线粘贴用。
     """
     cloud_id = decode_cloud_id(cloud_id_text)
     product_code = str(cloud_id["product_code"])
@@ -44,12 +55,13 @@ def issue_license(
 
     not_before = not_before or timezone.now()
     license_id = _generate_license_id()
+    fingerprint = binding_fingerprint(cloud_id)  # 32 字节，去掉 nonce/created_at
 
     payload = encode_license_payload(
         license_id=license_id,
         product_code=product.code,
         customer_id=str(customer.id),
-        cloud_id_binding=bytes(cloud_id_text, "utf-8"),
+        cloud_id_binding=fingerprint,
         not_before=int(not_before.timestamp()),
         not_after=int(expires_at.timestamp()),
         grace_seconds=grace_seconds,
@@ -58,15 +70,18 @@ def issue_license(
     )
 
     signature = signer.sign(payload)
-    license_file = encode_license_file(payload, signature, signer.kid())
-    activation_code = encode_activation_code(license_file)
+    envelope_bytes = encode_license_envelope(payload, signature, signer.kid())
+    artifacts = LicenseArtifacts(
+        license_file=encode_license_file(envelope_bytes),
+        activation_code=encode_activation_code(envelope_bytes),
+    )
 
     license_obj = License.objects.create(
         license_id=license_id,
         product=product,
         customer=customer,
-        cloud_id_binding=bytes(cloud_id_text, "utf-8"),
-        cloud_id_text=cloud_id_text,
+        cloud_id_binding=fingerprint,           # 32 字节 fingerprint
+        cloud_id_text=cloud_id_text,            # 完整文本仅作 audit/排查
         hardware_fp_hash=bytes(cloud_id["hardware_fp"]),
         instance_pubkey=bytes(cloud_id["instance_pubkey_fp"]),
         status=License.STATUS_ISSUED,
@@ -82,7 +97,7 @@ def issue_license(
         issued_by=issued_by,
     )
 
-    return license_obj, activation_code
+    return license_obj, artifacts
 
 
 def renew_license(
@@ -91,16 +106,18 @@ def renew_license(
     new_expires_at: datetime,
     signer: IKeySigner,
     grace_seconds: int = DEFAULT_GRACE_SECONDS,
-) -> str:
-    """续期 License；返回新的 Activation Code。"""
+) -> LicenseArtifacts:
+    """续期 License；返回新的 LicenseArtifacts(license_file, activation_code)。"""
     license_obj.expires_at = new_expires_at
     license_obj.grace_until = new_expires_at + timedelta(seconds=grace_seconds)
 
+    # cloud_id_binding 在 issue 时已存为 32 字节 fingerprint；BinaryField 在不同
+    # 数据库驱动下可能返回 bytes 或 memoryview — 统一用 bytes() 收敛
     payload = encode_license_payload(
         license_id=license_obj.license_id,
         product_code=license_obj.product.code,
         customer_id=str(license_obj.customer.id),
-        cloud_id_binding=license_obj.cloud_id_binding,
+        cloud_id_binding=bytes(license_obj.cloud_id_binding),
         not_before=int(license_obj.not_before.timestamp()) if license_obj.not_before else 0,
         not_after=int(new_expires_at.timestamp()),
         grace_seconds=grace_seconds,
@@ -109,8 +126,11 @@ def renew_license(
     )
 
     signature = signer.sign(payload)
-    license_file = encode_license_file(payload, signature, signer.kid())
-    activation_code = encode_activation_code(license_file)
+    envelope_bytes = encode_license_envelope(payload, signature, signer.kid())
+    artifacts = LicenseArtifacts(
+        license_file=encode_license_file(envelope_bytes),
+        activation_code=encode_activation_code(envelope_bytes),
+    )
 
     license_obj.signature = signature
     license_obj.signature_kid = signer.kid()
@@ -127,7 +147,7 @@ def renew_license(
             "updated_at",
         ]
     )
-    return activation_code
+    return artifacts
 
 
 def revoke_license(

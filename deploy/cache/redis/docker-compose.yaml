@@ -1,12 +1,15 @@
 version: "3.9"
 
 # Redis 7 — License Console 缓存 / 会话 / 限速
+# 命名规范：username = naviam_<project>（ACL）；password = <Service>@!QAZxsw2.
 
 services:
   redis:
     image: redis:7-alpine
     container_name: license_redis
     restart: unless-stopped
+    # requirepass 设的是 default 用户密码；命名 ACL 用户由 redis.conf 中
+    # `user naviam_license on >${REDIS_PASSWORD} ~* &* +@all` 声明
     command: >
       redis-server
       /usr/local/etc/redis/redis.conf
@@ -15,13 +18,14 @@ services:
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
       - ./data:/data
     ports:
-      - "127.0.0.1:6379:6379"
+      - "${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
     environment:
+      REDIS_USERNAME: ${REDIS_USERNAME:-naviam_license}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     security_opt:
       - no-new-privileges:true

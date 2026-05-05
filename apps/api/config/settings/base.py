@@ -91,16 +91,24 @@ TEMPLATES = [
 ]
 
 # -----------------------------------------------------------------------------
-# Database
+# Database (Postgres)
+# 团队约定：所有数据源走 type/host/port/username/password 分字段，禁止 URL 拼接。
 # -----------------------------------------------------------------------------
+POSTGRES_TYPE = env("POSTGRES_TYPE", default="postgresql")
+POSTGRES_HOST = env("POSTGRES_HOST", default="127.0.0.1")
+POSTGRES_PORT = env.int("POSTGRES_PORT", default=5432)
+POSTGRES_DB = env("POSTGRES_DB", default="naviam_license")
+POSTGRES_USERNAME = env("POSTGRES_USERNAME", default=env("POSTGRES_USER", default="naviam_license"))
+POSTGRES_PASSWORD = env("POSTGRES_PASSWORD")
+
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "HOST": env("POSTGRES_HOST", default="127.0.0.1"),
-        "PORT": env.int("POSTGRES_PORT", default=5432),
-        "USER": env("POSTGRES_USER"),
-        "PASSWORD": env("POSTGRES_PASSWORD"),
-        "NAME": env("POSTGRES_DB"),
+        "ENGINE": f"django.db.backends.{POSTGRES_TYPE}",
+        "HOST": POSTGRES_HOST,
+        "PORT": POSTGRES_PORT,
+        "USER": POSTGRES_USERNAME,
+        "PASSWORD": POSTGRES_PASSWORD,
+        "NAME": POSTGRES_DB,
         "OPTIONS": {"sslmode": "prefer"},
         "CONN_MAX_AGE": 60,
     }
@@ -110,17 +118,31 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # -----------------------------------------------------------------------------
 # Cache / Session / Ratelimit (Redis)
+# 同样按 type/host/port/username/password 拆分；Redis URL 仅在交付给 django-redis
+# 后端时由本模块内部组装，不再暴露为环境变量。
 # -----------------------------------------------------------------------------
-REDIS_URL = (
-    f"redis://:{env('REDIS_PASSWORD')}@{env('REDIS_HOST', default='127.0.0.1')}:"
-    f"{env.int('REDIS_PORT', default=6379)}/{env.int('REDIS_DB', default=0)}"
+REDIS_TYPE = env("REDIS_TYPE", default="redis")
+REDIS_HOST = env("REDIS_HOST", default="127.0.0.1")
+REDIS_PORT = env.int("REDIS_PORT", default=6379)
+REDIS_USERNAME = env("REDIS_USERNAME", default="")
+REDIS_PASSWORD = env("REDIS_PASSWORD")
+REDIS_DB = env.int("REDIS_DB", default=0)
+
+# 仅供 django-redis 后端使用；从分字段在内存中组装，不读 REDIS_URL 环境变量。
+from urllib.parse import quote as _urlquote  # noqa: E402
+
+_redis_userinfo = (
+    f"{_urlquote(REDIS_USERNAME, safe='')}:{_urlquote(REDIS_PASSWORD, safe='')}"
+    if REDIS_USERNAME
+    else f":{_urlquote(REDIS_PASSWORD, safe='')}"
 )
+REDIS_URL = f"{REDIS_TYPE}://{_redis_userinfo}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": REDIS_URL,
-        "OPTIONS": {"db": env.int("REDIS_DB", default=0)},
+        "OPTIONS": {"db": REDIS_DB},
     }
 }
 
@@ -210,6 +232,11 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "user": "60/min",
         "anon": "20/min",
+        # === Phase 11：敏感端点单独限流（per-IP，叠加在 anon 之上） ===
+        # 对应 ScopedRateThrottle；view 通过 throttle_scope 字段引用
+        "auth_login": "5/min",            # 5 次/分钟 — 防爆破；axes 兜底锁定 5 次失败
+        "auth_totp": "10/min",            # 用户输错码可重试，但限制总速率
+        "auth_change_password": "5/min",  # 改密同样敏感
     },
     "EXCEPTION_HANDLER": "modules.security.exceptions.exception_handler",
 }
@@ -260,8 +287,20 @@ LOGGING = {
 # -----------------------------------------------------------------------------
 APP_NAME = env("APP_NAME", default="License")
 APP_SLUG = env("APP_SLUG", default="license")
-DEFAULT_ADMIN_EMAIL = env("DEFAULT_ADMIN_EMAIL", default="admin@workerspace.ai")
-DEFAULT_ADMIN_PASSWORD = env("DEFAULT_ADMIN_PASSWORD", default="admin@workerspace.ai")
+# 历史上 .env.example 用 ADMIN_*，base.py 读 DEFAULT_ADMIN_*，env 永不生效。
+# 现在两个名字都接受，DEFAULT_ADMIN_* 优先（与 startup.py / management command 一致）。
+DEFAULT_ADMIN_USERNAME = env(
+    "DEFAULT_ADMIN_USERNAME",
+    default=env("ADMIN_USERNAME", default="Admin"),
+)
+DEFAULT_ADMIN_EMAIL = env(
+    "DEFAULT_ADMIN_EMAIL",
+    default=env("ADMIN_EMAIL", default="admin@workerspace.ai"),
+)
+DEFAULT_ADMIN_PASSWORD = env(
+    "DEFAULT_ADMIN_PASSWORD",
+    default=env("ADMIN_PASSWORD", default="admin@workerspace.ai"),
+)
 
 # -----------------------------------------------------------------------------
 # CORS (dev only — prod uses explicit allow-list)
