@@ -1,0 +1,7 @@
+{
+  "binding": "soft",
+  "expires_at": "2027-01-01T00:00:00+00:00",
+  "fingerprint_must_match": null,
+  "license_id": "vector-002-ed25519-hybrid-soft",
+  "status": "valid"
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@yourco/forge-verifier",
+  "version": "0.2.0",
+  "description": "Forge License Authority Verifier — TypeScript / Node SDK",
+  "license": "Proprietary",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "node --test --import tsx tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "optionalDependencies": {
+    "sm-crypto": "^0.3.14"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4",
+    "typescript": "^5.5"
+  }
+}

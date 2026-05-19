@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Forge Admin 默认色板（继承全局 UI 规则）
+ * - 主色亮暗一致：iOS Green #34C759（HSL 142 70% 49%）
+ * - 亮色 bg = 白 / fg = 近黑；暗色 bg = 纯黑 / fg = iOS gray-6
+ * - 客户白标改主色：覆盖 --color-primary 即可（运行时由 __APP_CONFIG__.brandPrimaryHsl 注入）
+ */
+:root {
+  --color-primary: 142 70% 49%;
+  --color-bg: 0 0% 100%;
+  --color-fg: 0 0% 4%;
+  --color-muted: 240 5% 96%;
+  --color-border: 240 6% 90%;
+}
+
+[data-theme="dark"] {
+  --color-bg: 0 0% 0%;
+  --color-fg: 240 5% 96%;
+  --color-muted: 240 4% 10%;
+  --color-border: 240 4% 16%;
+}
+
+/* Apple 风格轻柔过渡 */
+@layer utilities {
+  .transition-soft {
+    transition-property: color, background-color, border-color, opacity, transform;
+    transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+    transition-duration: 240ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

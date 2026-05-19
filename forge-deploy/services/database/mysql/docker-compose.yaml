@@ -1,0 +1,46 @@
+## Forge — Local MySQL for development
+##
+## 启动：cd services/database/mysql && docker compose up -d
+## 数据卷 ./data/ 已 gitignore
+## 仅本地开发使用；客户私有化部署连客户自有 MySQL 实例。
+
+name: forge-mysql
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: forge-mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-13306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}"
+      MYSQL_USER: "${MYSQL_USER:-forge_app}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-forge_main}"
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+      - --skip-name-resolve
+      - --innodb-buffer-pool-size=256M
+      - --max-connections=200
+      - --slow-query-log=ON
+      - --long-query-time=0.2
+    volumes:
+      - ./data:/var/lib/mysql
+      - ./config/my.cnf:/etc/mysql/conf.d/forge.cnf:ro
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "mysqladmin ping -h localhost -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+networks:
+  default:
+    name: forge-mysql-net

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Forge — License Authority</title>
+    <!--
+      运行时配置注入点（HARD RULE: 无硬编码）。
+      生产 / 私有化部署在 forge-admin/Dockerfile entrypoint 里把 `<<TOKEN>>`
+      占位符替换成真实 env 值。
+      本地 `npm run dev` 时占位符不会被替换 → `src/lib/api/client.ts` 检测到 `<<`
+      前缀会回落到 vite proxy（见 vite.config.ts dev-only fallback）。
+    -->
+    <script id="forge-app-config">
+      window.__APP_CONFIG__ = {
+        apiBaseUrl: "<<APP_API_BASE_URL>>",
+        ssoEnabled: "<<APP_SSO_ENABLED>>",
+        brandPrimaryHsl: "<<APP_BRAND_PRIMARY_HSL>>"
+      };
+    </script>
+  </head>
+  <body class="bg-bg text-fg antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

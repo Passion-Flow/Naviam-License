@@ -1,0 +1,47 @@
+{{/*
+Alembic migrations Job — 在 bootstrap-admin 之前跑 (hook-weight -10 < -5)，
+保证 schema 已 up-to-date 再创建管理员，再起 api/worker/scheduler。
+
+`alembic upgrade head` 内置幂等性；每次 install/upgrade 都安全跑一遍。
+*/}}
+{{- if .Values.api.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "forge.fullname" . }}-migrate
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "forge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "forge.image" (dict "root" . "component" "api") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          env:
+            {{- include "forge.appEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+{{- end }}

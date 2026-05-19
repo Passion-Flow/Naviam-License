@@ -1,0 +1,65 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forge.componentName" (dict "root" . "component" "worker") }}
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "forge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "forge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+        {{- include "forge.podExtraLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/shared/config.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/shared/secret.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.worker.serviceAccountName }}
+      serviceAccountName: {{ .Values.worker.serviceAccountName }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "forge.podSecurityContext" .) }}
+      securityContext:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "forge.image" (dict "root" . "component" "worker") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          {{- with (include "forge.containerSecurityContext" .) }}
+          securityContext:
+            {{- . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: CELERY_WORKER_CONCURRENCY
+              value: {{ .Values.worker.concurrency | quote }}
+            {{- include "forge.appEnv" . | nindent 12 }}
+            {{- with .Values.worker.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+{{- end }}

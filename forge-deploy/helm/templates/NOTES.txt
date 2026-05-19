@@ -1,0 +1,32 @@
+Forge — License Authority deployed.
+
+Release: {{ .Release.Name }}    Namespace: {{ .Release.Namespace }}    Chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+
+Components:
+  - forge-api        (replicas: {{ .Values.api.replicas }})
+  - forge-worker     (replicas: {{ .Values.worker.replicas }})
+  - forge-scheduler  (replicas: 1   ⚠️ singleton — Celery beat)
+  - forge-web        (replicas: {{ .Values.web.replicas }})
+
+Secrets:
+  By default the chart auto-creates `{{ include "forge.secretName" . }}` from inline
+  values (database.password, cache.password, signing.global.keyMasterPassphrase, ...).
+
+  For production, override the inline fields with externally-managed secrets:
+    - database.externalSecretName                  (key=DATABASE_PASSWORD)
+    - cache.externalSecretName                     (key=CACHE_PASSWORD)
+    - objectStorage.externalSecretName             (keys=OBJECT_STORAGE_ACCESS_KEY_ID, OBJECT_STORAGE_ACCESS_KEY_SECRET)
+    - signing.masterPassphraseExistingSecret       (key=KEY_MASTER_PASSPHRASE)
+    - auth.sessionSecretExistingSecret             (key=AUTH_SESSION_SECRET)
+
+Access:
+{{- if .Values.ingress.enabled }}
+  Web UI:  http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/
+  API:     http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/api/v1/
+{{- else }}
+  Port-forward:  kubectl port-forward svc/{{ include "forge.componentName" (dict "root" . "component" "web") }} 18080:80
+{{- end }}
+
+Smoke check:
+  kubectl rollout status deployment/{{ include "forge.componentName" (dict "root" . "component" "api") }}
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}

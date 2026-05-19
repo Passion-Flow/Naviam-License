@@ -1,0 +1,52 @@
+## Forge — 反代到 forge-web（前端）+ forge-api（后端）
+## nginx 官方镜像启动时 envsubst 处理本模板，所有 ${VAR} 会被替换。
+## 变量来源：envs/infrastructure/nginx.env + 顶层 .env。
+
+upstream forge_web {
+    server forge-web:${WEB_PORT};
+    keepalive 16;
+}
+
+upstream forge_api {
+    server forge-api:${SERVER_PORT};
+    keepalive 16;
+}
+
+# ────────── HTTP → HTTPS 强制跳转（NGINX_TLS_ENABLED=true 时启用）──────────
+# envsubst 不支持条件语法；本模板始终监听 80，根据 ${NGINX_TLS_ENABLED} 决定行为。
+# 通过 `ssl/forge.crt` + `ssl/forge.key` 卷挂载提供证书；缺失 → nginx 启动失败。
+
+server {
+    listen 80;
+    server_name ${NGINX_SERVER_NAME};
+    client_max_body_size ${NGINX_PROXY_BODY_SIZE};
+
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+
+    # 当 TLS 开启 → 把非 healthcheck 流量整体跳到 https://$host$request_uri
+    # NGINX_TLS_ENABLED=true 部署时，建议在外层负载均衡也做 redirect
+    location / {
+        # 兼容关闭 TLS 的环境（NGINX_TLS_ENABLED=false 时落到正常代理）
+        set $upstream_target "http://forge_web";
+        if ($http_x_forwarded_proto = "http") { set $upstream_target "http://forge_web"; }
+        proxy_pass $upstream_target;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/ {
+        proxy_pass http://forge_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}

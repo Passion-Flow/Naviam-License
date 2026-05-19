@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "forge.fullname" . }}-config
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+data:
+  # ─── Database
+  DATABASE_TYPE: {{ .Values.database.type | quote }}
+  DATABASE_HOST: {{ .Values.database.host | quote }}
+  DATABASE_PORT: {{ .Values.database.port | quote }}
+  DATABASE_USERNAME: {{ .Values.database.username | quote }}
+  DATABASE_DATABASE: {{ .Values.database.database | quote }}
+  DATABASE_POOL_SIZE: {{ .Values.database.poolSize | quote }}
+  DATABASE_SSL_MODE: {{ .Values.database.sslMode | quote }}
+  # ─── Cache
+  CACHE_TYPE: {{ .Values.cache.type | quote }}
+  CACHE_HOST: {{ .Values.cache.host | quote }}
+  CACHE_PORT: {{ .Values.cache.port | quote }}
+  CACHE_USERNAME: {{ .Values.cache.username | quote }}
+  CACHE_DB_APP: {{ .Values.cache.dbApp | quote }}
+  CACHE_DB_SESSION: {{ .Values.cache.dbSession | quote }}
+  CACHE_DB_CELERY_BROKER: {{ .Values.cache.dbCeleryBroker | quote }}
+  CACHE_DB_CELERY_RESULT: {{ .Values.cache.dbCeleryResult | quote }}
+  # ─── Object Storage
+  OBJECT_STORAGE_TYPE: {{ .Values.objectStorage.type | quote }}
+  OBJECT_STORAGE_ENDPOINT: {{ include "forge.objectStorage.endpoint" . | quote }}
+  OBJECT_STORAGE_REGION: {{ include "forge.objectStorage.region" . | quote }}
+  OBJECT_STORAGE_BUCKET_LICENSE_FILES: {{ .Values.objectStorage.buckets.licenseFiles | quote }}
+  OBJECT_STORAGE_BUCKET_PUBLIC_KEYS: {{ .Values.objectStorage.buckets.publicKeys | quote }}
+  OBJECT_STORAGE_BUCKET_AUDIT: {{ .Values.objectStorage.buckets.audit | quote }}
+  # ─── Signing
+  SIGNING_DEFAULT_ALGORITHM: {{ .Values.signing.defaultAlgorithm | quote }}
+  KEY_STORAGE_BACKEND: {{ .Values.signing.keyStorageBackend | quote }}
+  KEY_STORAGE_LOCAL_PATH: {{ .Values.signing.keyStorageLocalPath | quote }}
+  # ─── Auth
+  AUTH_SESSION_MAX_AGE_SECONDS: {{ .Values.auth.sessionMaxAgeSeconds | quote }}
+  # ─── Heartbeat
+  HEARTBEAT_WINDOW_SECONDS: {{ .Values.heartbeat.windowSeconds | quote }}
+  HEARTBEAT_THRESHOLD: {{ .Values.heartbeat.threshold | quote }}
+  HEARTBEAT_GRACE_COUNT: {{ .Values.heartbeat.graceCount | quote }}
+  # ─── Logging
+  LOG_LEVEL: {{ .Values.global.log.level | quote }}
+  LOG_FORMAT: {{ .Values.global.log.outputFormat | quote }}
+  # ─── Frontend (forge-web). Same field names as Docker .env.example so the
+  # three delivery modes stay one-to-one (HARD RULE: 三种模式 env 字段必须对应).
+  APP_API_BASE_URL: {{ .Values.web.apiBaseUrl | default "/api/v1" | quote }}
+  APP_SSO_ENABLED: {{ .Values.auth.sso.enabled | quote }}
+  APP_BRAND_PRIMARY_HSL: {{ .Values.web.brandingPrimaryHsl | quote }}

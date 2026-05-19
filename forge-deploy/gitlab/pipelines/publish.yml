@@ -1,0 +1,43 @@
+# ------------------------------------------------------------------
+# stage: publish
+# Promote scanned images by adding a release tag. Build stage already
+# pushed $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA; this stage re-tags
+# them with the semver tag for protected refs only.
+# ------------------------------------------------------------------
+
+.publish-base:
+  stage: publish
+  image: $DOCKER_IMAGE
+  services:
+    - $DOCKER_DIND_IMAGE
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+
+.publish-image:
+  extends: .publish-base
+  script:
+    - docker pull $IMAGE_REGISTRY/$FORGE_IMAGE:$IMAGE_TAG
+    - docker tag  $IMAGE_REGISTRY/$FORGE_IMAGE:$IMAGE_TAG $IMAGE_REGISTRY/$FORGE_IMAGE:$CI_COMMIT_TAG
+    - docker push $IMAGE_REGISTRY/$FORGE_IMAGE:$CI_COMMIT_TAG
+
+publish:forge-api:
+  extends: .publish-image
+  variables:
+    FORGE_IMAGE: forge-api
+
+publish:forge-worker:
+  extends: .publish-image
+  variables:
+    FORGE_IMAGE: forge-worker
+
+publish:forge-scheduler:
+  extends: .publish-image
+  variables:
+    FORGE_IMAGE: forge-scheduler
+
+publish:forge-web:
+  extends: .publish-image
+  variables:
+    FORGE_IMAGE: forge-web

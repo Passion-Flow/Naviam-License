@@ -1,0 +1,45 @@
+[build-system]
+# Modern PEP 517 build backend so `pip install -e .` works on any host
+# without falling back to legacy setup.py shims.
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forge-verifier"
+version = "0.1.0"
+description = "Forge License Verifier — Python reference implementation"
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = [{ name = "gennacalluan", email = "gennacalluan@gmail.com" }]
+requires-python = ">=3.10"
+keywords = ["forge", "license", "signing", "verifier", "ed25519", "rsa", "sm2"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: Other/Proprietary License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security :: Cryptography",
+]
+dependencies = [
+  "cryptography>=42.0",
+  "httpx>=0.26",
+  "gmssl>=3.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.2"]
+
+# Explicit package list — keep the verifier package self-contained;
+# no auto-include of tests/ or top-level helpers.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["forge_verifier*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

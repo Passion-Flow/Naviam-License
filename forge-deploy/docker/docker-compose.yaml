@@ -1,0 +1,223 @@
+# ==================================================================
+# Forge — enterprise self-hosted compose deployment.
+# Application images (HARD RULE: image planning):
+#   forge-api        — FastAPI HTTP service
+#   forge-worker     — Celery worker (background tasks)
+#   forge-scheduler  — Celery beat (singleton)
+#   forge-web        — Admin UI (nginx serves built React assets)
+# ==================================================================
+
+name: forge
+
+# ------------------------------------------------------------------
+# Shared env_file aggregation. All three backend containers (api /
+# worker / scheduler) read the same env contract; provider-specific
+# files under envs/<topic>/ are loaded with required: false so the
+# customer only needs to copy the ones they actually use.
+# ------------------------------------------------------------------
+x-shared-app-env: &shared-app-env
+  env_file:
+    - path: ./envs/core-services/shared.env
+      required: false
+    - path: ./envs/databases/postgres.env
+      required: false
+    - path: ./envs/databases/mysql.env
+      required: false
+    - path: ./envs/databases/oracle.env
+      required: false
+    - path: ./envs/databases/tidb.env
+      required: false
+    - path: ./envs/caches/redis.env
+      required: false
+    - path: ./envs/object-storage/local.env
+      required: false
+    - path: ./envs/object-storage/s3.env
+      required: false
+    - path: ./envs/object-storage/azure-blob.env
+      required: false
+    - path: ./envs/object-storage/aliyun-oss.env
+      required: false
+    - path: ./envs/object-storage/google-storage.env
+      required: false
+    - path: ./envs/object-storage/tencent-cos.env
+      required: false
+    - path: ./envs/object-storage/volcengine-tos.env
+      required: false
+    - path: ./envs/object-storage/huawei-obs.env
+      required: false
+    - path: ./envs/infrastructure/nginx.env
+      required: false
+    - ./.env
+  restart: always
+
+services:
+  # ─── Self-hosted dependencies (optional — point app envs at external
+  # instances and remove these services if the customer already runs them) ───
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_DATABASE}
+      TZ: UTC
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME} -d ${DATABASE_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command:
+      - redis-server
+      - --requirepass
+      - ${CACHE_PASSWORD}
+      - --appendonly
+      - "yes"
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${CACHE_PASSWORD} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    restart: always
+    profiles: ["local-minio"]
+    environment:
+      # 不给 fallback：缺 env 直接 compose up 失败，避免起明文默认凭证
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_LOCAL_MINIO_USERNAME:?set OBJECT_STORAGE_LOCAL_MINIO_USERNAME in envs/object-storage/local.env}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_LOCAL_MINIO_PASSWORD:?set OBJECT_STORAGE_LOCAL_MINIO_PASSWORD in envs/object-storage/local.env}
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Application services ───────────────────────────────────────
+  # One-shot migration runner: alembic upgrade head (idempotent).
+  # Must complete before bootstrap-admin / api / worker / scheduler boot.
+  forge-migrate:
+    <<: *shared-app-env
+    image: ${IMAGE_REGISTRY}/forge-api:${IMAGE_TAG}
+    restart: "no"
+    env_file:
+      - path: ./envs/core-services/api.env
+        required: false
+      - ./.env
+    depends_on:
+      db: { condition: service_healthy }
+    command: ["alembic", "upgrade", "head"]
+
+  # One-shot bootstrap: creates the default super-admin if it does not exist.
+  # Idempotent — safe to leave in place across restarts; exits 0 on every run.
+  # `restart: "no"` overrides the shared anchor's `restart: always`.
+  forge-bootstrap:
+    <<: *shared-app-env
+    image: ${IMAGE_REGISTRY}/forge-api:${IMAGE_TAG}
+    restart: "no"
+    env_file:
+      - path: ./envs/core-services/api.env
+        required: false
+      - ./.env
+    depends_on:
+      db: { condition: service_healthy }
+      forge-migrate: { condition: service_completed_successfully }
+    command: ["python", "-m", "app.cli.bootstrap_admin", "--json"]
+
+  forge-api:
+    <<: *shared-app-env
+    image: ${IMAGE_REGISTRY}/forge-api:${IMAGE_TAG}
+    env_file:
+      - path: ./envs/core-services/api.env
+        required: false
+      - ./.env
+    depends_on:
+      db:    { condition: service_healthy }
+      redis: { condition: service_healthy }
+      forge-bootstrap: { condition: service_completed_successfully }
+    healthcheck:
+      # 端口从 SERVER_PORT 读，与 forge-server settings.server_port 对齐
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import os,urllib.request,sys; sys.exit(0) if urllib.request.urlopen(f'http://localhost:{os.environ[\\\"SERVER_PORT\\\"]}/api/v1/health').status == 200 else sys.exit(1)\""
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  forge-worker:
+    <<: *shared-app-env
+    image: ${IMAGE_REGISTRY}/forge-worker:${IMAGE_TAG}
+    env_file:
+      - path: ./envs/core-services/worker.env
+        required: false
+      - ./.env
+    depends_on:
+      db:    { condition: service_healthy }
+      redis: { condition: service_healthy }
+    deploy:
+      replicas: ${FORGE_WORKER_REPLICAS:-1}
+
+  forge-scheduler:
+    <<: *shared-app-env
+    image: ${IMAGE_REGISTRY}/forge-scheduler:${IMAGE_TAG}
+    env_file:
+      - path: ./envs/core-services/scheduler.env
+        required: false
+      - ./.env
+    depends_on:
+      redis: { condition: service_healthy }
+    # ⚠️ Celery beat must run as a singleton
+    deploy:
+      replicas: 1
+
+  forge-web:
+    image: ${IMAGE_REGISTRY}/forge-web:${IMAGE_TAG}
+    restart: always
+    depends_on:
+      forge-api: { condition: service_healthy }
+    environment:
+      APP_API_BASE_URL: ${APP_API_BASE_URL}
+      APP_SSO_ENABLED: ${APP_SSO_ENABLED}
+      APP_BRAND_PRIMARY_HSL: ${APP_BRAND_PRIMARY_HSL}
+
+  # ─── Edge / reverse proxy ──────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: always
+    env_file:
+      - path: ./envs/infrastructure/nginx.env
+        required: false
+      - ./.env
+    ports:
+      - "${HTTP_PORT:-18080}:80"
+      - "${HTTPS_PORT:-18443}:443"
+    depends_on:
+      - forge-web
+      - forge-api
+    environment:
+      # 透传给 envsubst — nginx 启动时把 templates/*.template 中 ${VAR} 替换
+      SERVER_PORT: ${SERVER_PORT}
+      WEB_PORT: ${WEB_PORT}
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME}
+      NGINX_PROXY_BODY_SIZE: ${NGINX_PROXY_BODY_SIZE}
+    volumes:
+      - ../nginx/templates:/etc/nginx/templates:ro
+      - ../nginx/ssl:/etc/nginx/ssl:ro
+
+volumes:
+  db-data:
+  redis-data:
+  minio-data:

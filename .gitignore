@@ -1,0 +1,102 @@
+# ──────────────────────────────────────────────────────────────
+# Forge — root .gitignore
+# 任何带凭据 / 运行时状态 / 构建产物的路径都不进仓库。
+# ──────────────────────────────────────────────────────────────
+
+# ─── Secrets / env ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+!**/__pycache__/**.py
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# 私钥落盘存储（KEY_STORAGE_LOCAL_PATH 默认 ./keys）
+Project-source/forge-server/keys/
+Project-source/forge-server/key_storage_data/
+Project-source/forge-server/var/
+
+# ─── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# ─── Node / TypeScript ─────────────────────────────────────────
+node_modules/
+dist/
+build/
+.next/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+
+# ─── Java / Maven ──────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+.idea/
+*.iml
+
+# ─── .NET / C# ─────────────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+*.dll
+*.exe
+*.pdb
+
+# ─── Rust ──────────────────────────────────────────────────────
+target/
+Cargo.lock
+
+# ─── Go ────────────────────────────────────────────────────────
+vendor/
+*.test
+*.out
+
+# ─── Service data dirs（compose 跑起来的本地数据卷）──────────
+forge-deploy/services/*/data/
+forge-deploy/services/*/*/data/
+forge-deploy/services/object-storage/local/data/
+forge-deploy/services/object-storage/local/minio/
+
+# ─── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── OS junk ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*~
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── Editor / Tooling ──────────────────────────────────────────
+.claude/
+.cursor/
+
+# ─── Project local overrides ───────────────────────────────────
+*.local.*
+local.toml

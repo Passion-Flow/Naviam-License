@@ -1,0 +1,7 @@
+{
+  "binding": "none",
+  "expires_at": "2027-01-01T00:00:00+00:00",
+  "fingerprint_must_match": null,
+  "license_id": "vector-001-ed25519-offline-none",
+  "status": "valid"
+}

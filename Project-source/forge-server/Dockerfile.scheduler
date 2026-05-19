@@ -1,0 +1,49 @@
+## forge-scheduler — Celery beat 镜像
+##
+## 4 镜像之一。定时任务调度（每天回顾 CRL 刷新、过期 license 通知、心跳归档等）。
+
+FROM python:3.11-slim AS build
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir --upgrade pip uv && \
+    uv pip install --system --no-cache .
+
+# Supply-chain — see Dockerfile.api
+RUN pip install --no-cache-dir pip-audit cyclonedx-bom 2>/dev/null || true \
+    && mkdir -p /usr/share/forge-sbom \
+    && (pip-audit --strict --format json > /usr/share/forge-sbom/pip-audit.json 2>/dev/null || echo '{"audit":"unavailable"}' > /usr/share/forge-sbom/pip-audit.json) \
+    && (cyclonedx-py environment -o /usr/share/forge-sbom/sbom.cdx.json 2>/dev/null || echo '{"sbom":"unavailable"}' > /usr/share/forge-sbom/sbom.cdx.json)
+
+COPY app ./app
+COPY alembic.ini ./
+
+
+FROM python:3.11-slim AS runtime
+
+LABEL org.opencontainers.image.title="forge-scheduler"
+LABEL org.opencontainers.image.licenses="Proprietary"
+
+# UID/GID 10001 与 helm podSecurityContext 对齐
+RUN groupadd -r -g 10001 forge && useradd -r -u 10001 -g forge -s /bin/false forge
+
+WORKDIR /app
+COPY --from=build /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=build /usr/local/bin /usr/local/bin
+COPY --from=build /app /app
+COPY --from=build /usr/share/forge-sbom /usr/share/forge-sbom
+
+USER forge
+
+# beat 进程单实例，健康检查走进程检测
+HEALTHCHECK --interval=60s --timeout=10s --start-period=20s --retries=3 \
+    CMD pgrep -f "celery .* beat" >/dev/null || exit 1
+
+CMD ["celery", "-A", "app.workers", "beat", "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"]

@@ -1,0 +1,74 @@
+# ------------------------------------------------------------------
+# stage: test
+# Unit + integration tests for each source tree, run independently
+# so failures point at the right component.
+# ------------------------------------------------------------------
+
+.test-python:
+  stage: test
+  image: $PYTHON_IMAGE
+  before_script:
+    - pip install --quiet --upgrade pip
+    - apt-get update -qq && apt-get install -y --no-install-recommends build-essential
+
+test:server:
+  extends: .test-python
+  script:
+    - cd Project-source/forge-server
+    - pip install --quiet -e .[dev]
+    - PYTHONPATH=. pytest --tb=short -q
+  artifacts:
+    when: always
+    reports:
+      junit: Project-source/forge-server/test-report.xml
+    expire_in: 1 week
+
+test:verifier-py:
+  extends: .test-python
+  script:
+    - cd Project-source/forge-verifier/python
+    - pip install --quiet -e .[dev]
+    - PYTHONPATH=. pytest --tb=short -q
+
+test:admin:
+  stage: test
+  image: $NODE_IMAGE
+  script:
+    - cd Project-source/forge-admin
+    - npm ci --silent
+    - npm run test:unit --if-present
+
+# ───── Multi-language Verifier SDK tests ─────
+# 跨语言互操作向量在 forge-verifier/spec/test-vectors/；4 个 SDK 必须读同一份过
+test:verifier-go:
+  stage: test
+  image: $GO_IMAGE
+  script:
+    - cd Project-source/forge-verifier/go
+    - go test -v ./...
+
+test:verifier-java:
+  stage: test
+  image: $JAVA_IMAGE
+  script:
+    - cd Project-source/forge-verifier/java
+    - mvn -B -q test
+  artifacts:
+    when: always
+    reports:
+      junit: Project-source/forge-verifier/java/target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+
+test:verifier-csharp:
+  stage: test
+  image: $DOTNET_IMAGE
+  script:
+    - cd Project-source/forge-verifier/csharp
+    - dotnet test --nologo --verbosity minimal
+
+test:verifier-rust:
+  stage: test
+  image: $RUST_IMAGE
+  script:
+    - cd Project-source/forge-verifier/rust
+    - cargo test --no-fail-fast

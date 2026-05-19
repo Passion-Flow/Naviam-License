@@ -1,0 +1,113 @@
+# ------------------------------------------------------------------
+# stage: scan
+# Vulnerability scan every image (trivy) + secrets / dependency scan.
+# scan failure must block publish.
+# ------------------------------------------------------------------
+
+.trivy-image:
+  stage: scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy image
+        --severity HIGH,CRITICAL
+        --exit-code 1
+        --no-progress
+        $IMAGE_REGISTRY/$FORGE_IMAGE:$IMAGE_TAG
+
+scan:forge-api:
+  extends: .trivy-image
+  variables:
+    FORGE_IMAGE: forge-api
+
+scan:forge-worker:
+  extends: .trivy-image
+  variables:
+    FORGE_IMAGE: forge-worker
+
+scan:forge-scheduler:
+  extends: .trivy-image
+  variables:
+    FORGE_IMAGE: forge-scheduler
+
+scan:forge-web:
+  extends: .trivy-image
+  variables:
+    FORGE_IMAGE: forge-web
+
+scan:secrets:
+  stage: scan
+  image: zricethezav/gitleaks:latest
+  script:
+    - gitleaks detect --redact --no-banner --source .
+
+# ------------------------------------------------------------------
+# SBOM —— 每镜像产出 SPDX/JSON 报表，artifact 留 30 天
+# 客户侧合规审计 / SBOM 透传给客户必备
+# ------------------------------------------------------------------
+.sbom-image:
+  stage: scan
+  image:
+    name: anchore/syft:latest
+    entrypoint: [""]
+  script:
+    - syft "$IMAGE_REGISTRY/$FORGE_IMAGE:$IMAGE_TAG" -o spdx-json > "sbom-$FORGE_IMAGE.spdx.json"
+    - syft "$IMAGE_REGISTRY/$FORGE_IMAGE:$IMAGE_TAG" -o cyclonedx-json > "sbom-$FORGE_IMAGE.cdx.json"
+  artifacts:
+    name: "sbom-$FORGE_IMAGE-$CI_COMMIT_SHORT_SHA"
+    expire_in: 30 days
+    paths:
+      - "sbom-$FORGE_IMAGE.spdx.json"
+      - "sbom-$FORGE_IMAGE.cdx.json"
+
+sbom:forge-api:
+  extends: .sbom-image
+  variables: { FORGE_IMAGE: forge-api }
+
+sbom:forge-worker:
+  extends: .sbom-image
+  variables: { FORGE_IMAGE: forge-worker }
+
+sbom:forge-scheduler:
+  extends: .sbom-image
+  variables: { FORGE_IMAGE: forge-scheduler }
+
+sbom:forge-web:
+  extends: .sbom-image
+  variables: { FORGE_IMAGE: forge-web }
+
+# ------------------------------------------------------------------
+# pip-audit —— Python 依赖 CVE 扫描；与 trivy image 扫并行
+# ------------------------------------------------------------------
+scan:pip-audit:
+  stage: scan
+  image: python:3.11-slim
+  before_script:
+    - pip install --no-cache-dir pip-audit
+  script:
+    - pip-audit --strict --requirement Project-source/forge-server/pyproject.toml || true
+    # --strict 已经会非零退出；上面 || true 是保留 artifact 必要兜底
+    - pip-audit --requirement Project-source/forge-server/pyproject.toml --format json > pip-audit.json
+  artifacts:
+    name: "pip-audit-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    paths:
+      - pip-audit.json
+    when: always
+
+# ------------------------------------------------------------------
+# npm-audit —— forge-admin 前端依赖扫描
+# ------------------------------------------------------------------
+scan:npm-audit:
+  stage: scan
+  image: node:20-alpine
+  script:
+    - cd Project-source/forge-admin
+    - npm ci --no-audit --no-fund
+    - npm audit --audit-level=high --json > ../../npm-audit.json || true
+    - npm audit --audit-level=high   # 真正的失败信号
+  artifacts:
+    name: "npm-audit-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    paths:
+      - npm-audit.json
+    when: always

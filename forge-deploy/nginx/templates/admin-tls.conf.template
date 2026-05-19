@@ -1,0 +1,50 @@
+# Forge — TLS server block
+# 仅当 NGINX_TLS_ENABLED=true 时把本文件挂到容器（compose 通过 profile 控制）。
+# 证书路径与 ../ssl/ 卷挂载点一致。
+
+server {
+    listen 443 ssl http2;
+    server_name ${NGINX_SERVER_NAME};
+    client_max_body_size ${NGINX_PROXY_BODY_SIZE};
+
+    ssl_certificate     /etc/nginx/ssl/forge.crt;
+    ssl_certificate_key /etc/nginx/ssl/forge.key;
+
+    # TLS 1.2/1.3 only；禁用裸 SSL 与 RC4 / 3DES
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+
+    # HSTS（开启前确认整站 HTTPS 可达）
+    add_header Strict-Transport-Security "max-age=15552000; includeSubDomains" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+
+    location / {
+        proxy_pass http://forge_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location /api/ {
+        proxy_pass http://forge_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 60s;
+    }
+}

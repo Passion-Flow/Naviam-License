@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PackageId>YourCo.Forge.Verifier</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>YourCo</Authors>
+    <Description>Forge License Authority Verifier — .NET</Description>
+    <RootNamespace>YourCo.Forge.Verifier</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Ed25519 from BouncyCastle: .NET BCL has no Ed25519 yet -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+  </ItemGroup>
+</Project>

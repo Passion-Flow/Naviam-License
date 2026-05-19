@@ -1,0 +1,67 @@
+{{/*
+One-shot Job that creates the default super-admin on every install / upgrade.
+The CLI itself is idempotent so re-runs across upgrades are safe.
+
+Helm hook ordering:
+  pre-install + pre-upgrade  → run before the API rolls out, so the very first
+                               login attempt against fresh storage can succeed.
+*/}}
+{{- if .Values.api.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "forge.fullname" . }}-bootstrap-admin
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "forge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bootstrap
+          image: {{ include "forge.image" (dict "root" . "component" "api") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["python", "-m", "app.cli.bootstrap_admin", "--json"]
+          env:
+            - name: BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "forge.auth.secretName" . }}
+                  key: BOOTSTRAP_ADMIN_USERNAME
+                  optional: true
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "forge.auth.secretName" . }}
+                  key: BOOTSTRAP_ADMIN_EMAIL
+                  optional: true
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "forge.auth.secretName" . }}
+                  key: BOOTSTRAP_ADMIN_PASSWORD
+                  optional: true
+            {{- include "forge.appEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+{{- end }}

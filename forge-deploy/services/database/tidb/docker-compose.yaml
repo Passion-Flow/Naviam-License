@@ -1,0 +1,37 @@
+## Forge — Local TiDB for development
+##
+## 启动：cd services/database/tidb && docker compose up -d
+## 仅用于本地开发；客户私有化部署连客户自有 TiDB 集群（不交付）。
+##
+## 生产 TiDB = PD x3 + TiKV x3 + TiDB x2，由客户用 tidb-operator 部署。
+## 本地起 dev 单容器（同进程内嵌 PD + TiKV）即可，足以跑 Forge 业务 + alembic。
+
+name: forge-tidb
+
+services:
+  tidb:
+    image: "pingcap/tidb:v7.5.1"
+    container_name: forge-tidb
+    restart: unless-stopped
+    ports:
+      - "${TIDB_PORT:-14000}:4000"   # MySQL 协议
+      - "${TIDB_STATUS_PORT:-10080}:10080"  # status / Prometheus metrics
+    command:
+      - "/tidb-server"
+      - "--store=unistore"
+      - "--path="
+      - "--host=0.0.0.0"
+      - "--advertise-address=tidb"
+      - "--log-level=info"
+    volumes:
+      - ./data:/tmp/tidb
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:10080/status >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+networks:
+  default:
+    name: forge-tidb-net

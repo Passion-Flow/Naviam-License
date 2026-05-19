@@ -1,0 +1,50 @@
+# ------------------------------------------------------------------
+# stage: build
+# One job per image (HARD RULE: image planning). Forge ships 4 images:
+#   forge-api / forge-worker / forge-scheduler / forge-web
+# Tags use $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA — never `latest`.
+# ------------------------------------------------------------------
+
+.build-base:
+  stage: build
+  image: $DOCKER_IMAGE
+  services:
+    - $DOCKER_DIND_IMAGE
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+
+build:forge-api:
+  extends: .build-base
+  script:
+    - docker build
+        -f Project-source/forge-server/Dockerfile.api
+        -t $IMAGE_REGISTRY/forge-api:$IMAGE_TAG
+        Project-source/forge-server/
+    - docker push $IMAGE_REGISTRY/forge-api:$IMAGE_TAG
+
+build:forge-worker:
+  extends: .build-base
+  script:
+    - docker build
+        -f Project-source/forge-server/Dockerfile.worker
+        -t $IMAGE_REGISTRY/forge-worker:$IMAGE_TAG
+        Project-source/forge-server/
+    - docker push $IMAGE_REGISTRY/forge-worker:$IMAGE_TAG
+
+build:forge-scheduler:
+  extends: .build-base
+  script:
+    - docker build
+        -f Project-source/forge-server/Dockerfile.scheduler
+        -t $IMAGE_REGISTRY/forge-scheduler:$IMAGE_TAG
+        Project-source/forge-server/
+    - docker push $IMAGE_REGISTRY/forge-scheduler:$IMAGE_TAG
+
+build:forge-web:
+  extends: .build-base
+  script:
+    - docker build
+        -f Project-source/forge-admin/Dockerfile
+        -t $IMAGE_REGISTRY/forge-web:$IMAGE_TAG
+        Project-source/forge-admin/
+    - docker push $IMAGE_REGISTRY/forge-web:$IMAGE_TAG

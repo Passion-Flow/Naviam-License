@@ -1,0 +1,78 @@
+# ==================================================================
+# Forge — enterprise CI/CD pipeline.
+# Top-level entry; concrete jobs live under pipelines/<stage>.yml.
+# Reference this file from the customer's GitLab project via either:
+#   - Custom CI/CD config path: `forge-deploy/gitlab/.gitlab-ci.yml`
+#   - Or a repo-root `.gitlab-ci.yml` containing:
+#       include: '/forge-deploy/gitlab/.gitlab-ci.yml'
+# ==================================================================
+
+stages:
+  - lint
+  - test
+  - build
+  - scan
+  - publish
+  - deploy
+  - verify
+
+variables:
+  IMAGE_REGISTRY: $CI_REGISTRY_IMAGE
+  IMAGE_TAG: $CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA
+  PYTHON_IMAGE: python:3.11-slim
+  NODE_IMAGE: node:20-alpine
+  HELM_IMAGE: alpine/helm:latest
+  DOCKER_IMAGE: docker:24
+  DOCKER_DIND_IMAGE: docker:24-dind
+  GO_IMAGE: golang:1.22
+  JAVA_IMAGE: maven:3.9-eclipse-temurin-17
+  DOTNET_IMAGE: mcr.microsoft.com/dotnet/sdk:8.0
+  RUST_IMAGE: rust:1.78
+  # Customer-controlled (define under Settings → CI/CD → Variables):
+  #   DEPLOY_TARGET_HOST          — SSH 部署目标主机 (compose 模式)
+  #   DEPLOY_TARGET_USER          — SSH 用户
+  #   DEPLOY_TARGET_PATH          — 远程 forge-deploy 目录
+  #   DEPLOY_SSH_PRIVATE_KEY      — file 类型变量
+  #   KUBECONFIG                  — file 类型变量 (helm 模式)
+  #   HELM_VALUES_FILE            — 路径，e.g. customer/values-prod.yaml
+  #   HELM_RELEASE                — 默认 "forge"
+  #   HELM_NAMESPACE              — 默认 "forge"
+  #   DEPLOY_MODE                 — "helm" | "compose"
+  #   DEPLOY_VERIFY_URL           — verify stage 探测的 health URL
+  #   FORGE_PIPELINE_TAGS         — runner tags（按客户基础设施配置；默认 "linux,docker"）
+
+default:
+  # Runner tags 由客户在自己 GitLab 上根据 runner 配置覆盖；
+  # 默认假设客户 runner 打了 "linux,docker" tag。
+  tags:
+    - linux
+    - docker
+  # 网络抖动 / runner 内存压力 → 自动重试一次
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - api_failure
+  # 全局超时 30 min，单 job 内可覆盖
+  timeout: 30 minutes
+  interruptible: true
+
+workflow:
+  # 防 push + MR 双跑：MR 优先
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
+include:
+  - local: 'forge-deploy/gitlab/pipelines/lint.yml'
+  - local: 'forge-deploy/gitlab/pipelines/test.yml'
+  - local: 'forge-deploy/gitlab/pipelines/build.yml'
+  - local: 'forge-deploy/gitlab/pipelines/scan.yml'
+  - local: 'forge-deploy/gitlab/pipelines/publish.yml'
+  - local: 'forge-deploy/gitlab/pipelines/deploy-compose.yml'
+  - local: 'forge-deploy/gitlab/pipelines/deploy-helm.yml'
+  - local: 'forge-deploy/gitlab/pipelines/verify.yml'

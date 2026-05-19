@@ -1,0 +1,103 @@
+{{/*
+NetworkPolicy — default-deny ingress + explicit allows per component.
+要求 CNI 强制 NetworkPolicy（Calico / Cilium / Antrea）。
+
+策略：
+- forge-api : 仅 Ingress controller + apiAllowedCIDRs 入站；出站不限（要访问 DB/Cache/Object Storage/外部 Verifier 心跳源 IP 列表过长）
+- forge-web : 仅 Ingress controller + webAllowedCIDRs 入站
+- forge-worker / scheduler : 默认无 ingress（不暴露端口）
+*/}}
+{{- if .Values.global.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.componentName" (dict "root" . "component" "api") }}-policy
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "forge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 13001
+    {{- range .Values.global.networkPolicy.apiAllowedCIDRs }}
+    - from:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - protocol: TCP
+          port: 13001
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.componentName" (dict "root" . "component" "web") }}-policy
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "forge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+    {{- range .Values.global.networkPolicy.webAllowedCIDRs }}
+    - from:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - protocol: TCP
+          port: 80
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.componentName" (dict "root" . "component" "worker") }}-policy
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "forge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  policyTypes:
+    - Ingress
+  ingress: []   # worker 不接受任何入站 — 它只主动连 broker / DB
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "forge.componentName" (dict "root" . "component" "scheduler") }}-policy
+  labels:
+    {{- include "forge.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "forge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  policyTypes:
+    - Ingress
+  ingress: []   # scheduler 同上
+{{- end }}

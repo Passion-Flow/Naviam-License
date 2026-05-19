@@ -1,0 +1,35 @@
+## Forge — Local Postgres for development
+##
+## 启动：docker-compose up -d
+## 数据卷 ./data/ 已 gitignore
+
+name: forge-postgres
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: forge-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-forge_app}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-Postgres@!QAZxsw2.}"
+      POSTGRES_DB: "${POSTGRES_DB:-forge_main}"
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./init:/docker-entrypoint-initdb.d:ro
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forge_app} -d ${POSTGRES_DB:-forge_main}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  default:
+    name: forge-postgres-net

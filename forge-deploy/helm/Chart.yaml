@@ -1,0 +1,17 @@
+apiVersion: v2
+name: forge
+description: Forge — License Authority Helm Chart (enterprise self-hosted)
+home: https://forge.local
+keywords:
+  - license
+  - signing
+  - authority
+  - cryptography
+maintainers:
+  - name: gennacalluan
+    email: gennacalluan@gmail.com
+sources:
+  - https://github.com/gennacalluan/forge
+type: application
+appVersion: "0.1.0"
+version: 0.1.0

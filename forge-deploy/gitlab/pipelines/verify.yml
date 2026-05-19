@@ -1,0 +1,19 @@
+# ------------------------------------------------------------------
+# stage: verify
+# Post-deploy smoke. Hits /api/v1/health from outside the cluster.
+# Customer sets DEPLOY_VERIFY_URL (e.g. https://forge.staging/api/v1/health).
+# ------------------------------------------------------------------
+
+verify:health:
+  stage: verify
+  image: curlimages/curl:latest
+  script:
+    - test -n "$DEPLOY_VERIFY_URL"
+    - for i in $(seq 1 30); do
+        echo "[$i/30] probing $DEPLOY_VERIFY_URL";
+        curl -fsS --max-time 10 "$DEPLOY_VERIFY_URL" && exit 0;
+        sleep 5;
+      done
+    - echo "health probe did not succeed" && exit 1
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'

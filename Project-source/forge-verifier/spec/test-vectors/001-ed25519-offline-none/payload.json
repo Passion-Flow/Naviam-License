@@ -1,0 +1,1 @@
+{"binding":"none","bound_fingerprint":null,"customer_id":"cust-test","expires_at":"2027-01-01T00:00:00+00:00","features":{"sso":true},"issued_at":"2026-01-01T00:00:00+00:00","license_id":"vector-001-ed25519-offline-none","limits":{"max_users":10},"mode":"offline","product_id":"prod-test","protocol_version":"1.0","scope":"customer_x_product"}

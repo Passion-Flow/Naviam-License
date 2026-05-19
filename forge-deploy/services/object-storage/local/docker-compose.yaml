@@ -1,0 +1,52 @@
+## Forge — Local Object Storage (MinIO)
+##
+## local 模式双模之一：自托管 MinIO（S3 兼容 API）。
+## 另一模式 filesystem 不需要容器（直存路径）。
+
+name: forge-minio
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    container_name: forge-minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-forge_app}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-Minio@!QAZxsw2.}"
+      TZ: UTC
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - ./data:/data
+      - ./config:/root/.minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # 初始化 bucket
+  minio-init:
+    image: minio/mc:RELEASE.2024-09-09T07-53-10Z
+    container_name: forge-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_forge: "http://${MINIO_ROOT_USER:-forge_app}:${MINIO_ROOT_PASSWORD:-Minio@!QAZxsw2.}@minio:9000"
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mc mb -p forge/forge-license-files || true
+        mc mb -p forge/forge-public-keys || true
+        mc mb -p forge/forge-audit-snapshots || true
+        echo "Forge MinIO buckets ready."
+
+networks:
+  default:
+    name: forge-minio-net

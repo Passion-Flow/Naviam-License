@@ -1,0 +1,41 @@
+# ------------------------------------------------------------------
+# stage: deploy (mode: compose)
+# Deploy via SSH + docker compose pull/up. Customer sets:
+#   DEPLOY_MODE=compose, DEPLOY_TARGET_HOST, DEPLOY_TARGET_USER,
+#   DEPLOY_TARGET_PATH, DEPLOY_SSH_PRIVATE_KEY (file variable).
+# Production deploy is manual.
+# ------------------------------------------------------------------
+
+.deploy-compose-base:
+  stage: deploy
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache openssh-client rsync
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - cp "$DEPLOY_SSH_PRIVATE_KEY" ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H "$DEPLOY_TARGET_HOST" >> ~/.ssh/known_hosts
+  rules:
+    - if: '$DEPLOY_MODE == "compose" && $CI_COMMIT_BRANCH == "main"'
+
+deploy:compose-staging:
+  extends: .deploy-compose-base
+  environment:
+    name: staging-compose
+  script:
+    - rsync -avz forge-deploy/docker/ "$DEPLOY_TARGET_USER@$DEPLOY_TARGET_HOST:$DEPLOY_TARGET_PATH/"
+    - ssh "$DEPLOY_TARGET_USER@$DEPLOY_TARGET_HOST"
+        "cd $DEPLOY_TARGET_PATH &&
+         export IMAGE_TAG=$IMAGE_TAG &&
+         docker compose pull && docker compose up -d"
+
+deploy:compose-prod:
+  extends: .deploy-compose-base
+  environment:
+    name: prod-compose
+  when: manual
+  script:
+    - rsync -avz forge-deploy/docker/ "$DEPLOY_TARGET_USER@$DEPLOY_TARGET_HOST:$DEPLOY_TARGET_PATH/"
+    - ssh "$DEPLOY_TARGET_USER@$DEPLOY_TARGET_HOST"
+        "cd $DEPLOY_TARGET_PATH &&
+         export IMAGE_TAG=$IMAGE_TAG &&
+         docker compose pull && docker compose up -d"

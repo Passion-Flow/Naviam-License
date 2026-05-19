@@ -1,0 +1,421 @@
+# Default values for forge.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+#
+# Field names align with ../docker/.env.example and ../gitlab/variables.md
+# (HARD RULE: three delivery modes share the same env field names).
+
+global:
+  # The edition of the deployment, SELF_HOSTED or CLOUD
+  edition: "SELF_HOSTED"
+  # A secret used for securely signing the admin session cookie. You can generate a strong key using `openssl rand -base64 42`.
+  sessionSecret: "#REPLACE_ME#"
+  # Master passphrase used to encrypt signing private keys at rest (AES-GCM + scrypt KDF).
+  # ⚠️ Losing this passphrase means losing the ability to decrypt every signing key — and therefore sign new licenses.
+  # You can generate a strong passphrase using `openssl rand -base64 42`.
+  keyMasterPassphrase: "#REPLACE_ME#"
+  useTLS: false
+  # External port for accessing services (default: 80).
+  # Browser uses port 443 for HTTPS (useTLS: true) unless explicitly overridden.
+  externalPort: 80
+  # Admin UI host, used to display URLs and build CORS allow-list. Example: forge.your-company.com
+  adminWebDomain: ""
+  # Public API host (verifier SDK and admin API call this). If empty, same as adminWebDomain.
+  apiDomain: ""
+  log:
+    # Output format, support: json, console
+    outputFormat: "json"
+    # Log level, support: debug, info, warning, error
+    level: "info"
+  # Extra labels applied to all Forge workload Pods (Deployment pod templates). Ignored when empty.
+  podLabels: {}
+
+  ###################################
+  # Pod security context (applied to all Forge Pods)
+  ###################################
+  podSecurityContext:
+    # Run all containers as non-root. Forge images create user `forge` (UID/GID 10001).
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+
+  ###################################
+  # NetworkPolicy (default-deny + explicit allows)
+  ###################################
+  networkPolicy:
+    # Render NetworkPolicy resources. Requires a CNI that enforces them (Calico / Cilium).
+    enabled: true
+    # Restrict cross-namespace traffic. Set false during initial rollout to avoid surprise lockouts.
+    strict: true
+    # CIDRs that may reach forge-api directly (verifier SDKs over the internet, internal subnets, ...).
+    # Default empty -> only the Ingress controller reaches the API.
+    apiAllowedCIDRs: []
+    # CIDRs allowed to reach forge-web. Same logic — empty = Ingress only.
+    webAllowedCIDRs: []
+
+###################################
+# Image Registry (shared across all four images)
+###################################
+# Four images are declared per-component below, split by runtime role
+# (HARD RULE: image planning).
+#   forge-api        — FastAPI HTTP service
+#   forge-worker     — Celery worker (background tasks)
+#   forge-scheduler  — Celery beat (singleton)
+#   forge-web        — Admin UI (nginx serves built React assets)
+imageRegistry: ""
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+
+###################################
+# Ingress
+###################################
+ingress:
+  enabled: true
+  className: ""
+  # Hostname for both the admin UI (/) and the public API (/api/).
+  host: forge.local
+  annotations: {}
+    # nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  tls:
+    enabled: true
+    # The kubernetes.io/tls Secret name. Customer typically lets cert-manager
+    # provision this and only configures the name here.
+    secretName: forge-tls
+    # Inline cert / key (PEM). Leave EMPTY in production — let cert-manager /
+    # external Secret create the Secret. Filled values render shared/tls-secret.yaml
+    # (fallback for air-gapped clusters without cert-manager).
+    cert: ""
+    key: ""
+
+###################################
+# forge-api
+###################################
+api:
+  image:
+    repository: forge-api
+    # override appVersion in Chart.yaml if not empty
+    tag: ""
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  serviceAccountName: ""
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  readinessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: 13001
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
+  livenessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: 13001
+      scheme: HTTP
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 3
+    failureThreshold: 3
+  extraEnv: []
+  # Apply your own Environment Variables if necessary. Below is demo.
+  # extraEnv:
+  #   - name: FOO
+  #     value: "bar"
+
+###################################
+# forge-worker
+###################################
+worker:
+  image:
+    repository: forge-worker
+    tag: ""
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  serviceAccountName: ""
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # Celery worker concurrency. 0 means use the SDK default (= CPU count).
+  concurrency: 0
+  extraEnv: []
+
+###################################
+# forge-scheduler
+###################################
+# ⚠️ Celery beat MUST run as a singleton — multiple replicas would fire every periodic task N times.
+# `replicas` is intentionally not exposed here; the Deployment is fixed at 1 with strategy: Recreate.
+scheduler:
+  image:
+    repository: forge-scheduler
+    tag: ""
+  enabled: true
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+  serviceAccountName: ""
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  extraEnv: []
+
+###################################
+# forge-web (Admin UI)
+###################################
+web:
+  image:
+    repository: forge-web
+    tag: ""
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  serviceAccountName: ""
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # Customer white-labeling — primary brand color in HSL space.
+  brandingPrimaryHsl: "142 70% 49%"
+
+###################################
+# Database
+###################################
+database:
+  # The database type support: postgres, mysql, oracle, tidb
+  type: "postgres"
+  host: "postgres.example"
+  # Default ports: postgres=5432, mysql=3306, oracle=1521, tidb=4000
+  # Note: when switching engine, remember to update port accordingly
+  port: 5432
+  username: "forge_app"
+  password: "#REPLACE_ME#"
+  database: "forge_main"
+  poolSize: 10
+  # SSL mode, support: disable, require, verify-ca, verify-full
+  # (oracle/mysql/tidb interpret these per their driver semantics)
+  sslMode: "require"
+  # When non-empty, password is read from this existing secret (key=password) and
+  # the inline `password` above is ignored. Recommended for production.
+  externalSecretName: ""
+
+###################################
+# Cache (Redis)
+###################################
+# The cache type support: redis
+cache:
+  type: "redis"
+  host: "redis.example"
+  port: 6379
+  username: ""
+  password: "#REPLACE_ME#"
+  # Database index split per workload, so a flush of session cache doesn't blow away Celery state.
+  dbApp: 0
+  dbSession: 1
+  dbCeleryBroker: 2
+  dbCeleryResult: 3
+  # When non-empty, password is read from this existing secret (key=password).
+  externalSecretName: ""
+
+###################################
+# Object Storage
+###################################
+objectStorage:
+  # The storage type support: local, s3, azure-blob, aliyun-oss, google-storage, tencent-cos, volcengine-tos, huawei-obs
+  type: "local"
+
+  # ─── local (filesystem inside the pod, or self-hosted MinIO sidecar) ───
+  local:
+    # The local mode support: filesystem, minio
+    mode: "filesystem"
+    filesystem:
+      # Mount path inside forge-api / forge-worker pods.
+      mountPath: "/var/lib/forge/storage"
+      persistentVolumeClaim:
+        existingClaim: ""
+        storageClass: ""
+        accessModes: ReadWriteMany
+        size: 20Gi
+    minio:
+      endpoint: "http://minio:9000"
+      accessKey: "forge_app"
+      secretKey: "#REPLACE_ME#"
+
+  # ─── s3 (AWS S3 or any S3-compatible like Ceph / Cloudflare R2) ───
+  s3:
+    endpoint: ""
+    region: "us-east-1"
+    accessKey: "#REPLACE_ME#"
+    secretKey: "#REPLACE_ME#"
+    # Set true to use AWS-managed IAM (IRSA / pod identity) instead of access keys.
+    useAwsManagedIam: false
+
+  # ─── azure-blob ───
+  azureBlob:
+    accountName: ""
+    accountKey: "#REPLACE_ME#"
+    accountUrl: ""
+    # Optional Azure EndpointSuffix, e.g. "core.windows.net" or "core.chinacloudapi.cn"
+    endpointSuffix: ""
+    # When using managed identity, make sure the service account is configured
+    # with the AKS workload identity label and useManagedIdentity is true.
+    useManagedIdentity: false
+
+  # ─── aliyun-oss ───
+  aliyunOss:
+    endpoint: "your-endpoint.aliyuncs.com"
+    region: "cn-hangzhou"
+    accessKey: "#REPLACE_ME#"
+    secretKey: "#REPLACE_ME#"
+
+  # ─── google-storage ───
+  googleStorage:
+    # The service account JSON key file content, base64 encoded.
+    # Leave empty to use GKE Workload Identity / metadata server.
+    serviceAccountJson: ""
+
+  # ─── tencent-cos ───
+  tencentCos:
+    region: "ap-shanghai"
+    secretId: "#REPLACE_ME#"
+    secretKey: "#REPLACE_ME#"
+    scheme: "https"
+
+  # ─── volcengine-tos ───
+  volcengineTos:
+    endpoint: "tos-endpoint"
+    region: "cn-beijing"
+    accessKey: "#REPLACE_ME#"
+    secretKey: "#REPLACE_ME#"
+
+  # ─── huawei-obs ───
+  huaweiObs:
+    server: "https://obs.cn-north-4.myhuaweicloud.com"
+    accessKey: "#REPLACE_ME#"
+    secretKey: "#REPLACE_ME#"
+
+  # ─── Buckets used by Forge (created by customer ahead of time) ───
+  buckets:
+    licenseFiles: "forge-license-files"
+    publicKeys:  "forge-public-keys"
+    audit:       "forge-audit-snapshots"
+
+  # When non-empty, access_key_id / access_key_secret are read from this existing
+  # secret instead of the inline fields above. Recommended for production.
+  externalSecretName: ""
+
+###################################
+# License Signing
+###################################
+signing:
+  # The signing algorithm support: ed25519, rsa2048, rsa4096, sm2
+  # Multiple algorithms can be enabled simultaneously; defaultAlgorithm picks which one is used for new issues.
+  algorithmsEnabled: ["ed25519", "rsa2048", "sm2"]
+  defaultAlgorithm: "ed25519"
+
+  # The key storage backend support: local_file, object_storage, kms
+  # - local_file:     private keys encrypted with the master passphrase and stored on a PV
+  # - object_storage: same encryption, blob stored in the configured Object Storage
+  # - kms:            unwrapped/signed via external KMS (Vault / AWS KMS / Aliyun KMS)
+  keyStorageBackend: "local_file"
+
+  # When keyStorageBackend=local_file: path inside the pod where encrypted keys live.
+  # Requires a PVC mount for durability across restarts.
+  keyStorageLocalPath: "/var/lib/forge/keys"
+  keyStoragePersistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes: ReadWriteOnce
+    size: 1Gi
+
+  # When non-empty, the master passphrase is read from this existing secret (key=passphrase).
+  # Otherwise it is derived from `global.keyMasterPassphrase`.
+  masterPassphraseExistingSecret: ""
+
+###################################
+# Auth
+###################################
+auth:
+  # Session cookie max-age in seconds (default 7 days).
+  sessionMaxAgeSeconds: 604800
+  sso:
+    # SSO support: oauth2, saml, oidc — currently scaffold only; toggle to false unless wired.
+    enabled: false
+    type: "oidc"
+    issuer: ""
+    clientId: ""
+    clientSecret: "#REPLACE_ME#"
+  # When non-empty, session secret is read from this existing secret (key=secret).
+  # Otherwise it is derived from `global.sessionSecret`.
+  sessionSecretExistingSecret: ""
+
+  # ─── Default super-admin (created by pre-install/pre-upgrade Job) ───
+  # The Job is idempotent — it reuses an existing username silently. Customers
+  # MUST rotate the documented default password immediately after first login.
+  bootstrapAdmin:
+    username: "Admin"
+    email: "admin@forge.local"
+    password: "#REPLACE_ME#"
+
+###################################
+# Heartbeat / Multi-env detection
+###################################
+heartbeat:
+  # Sliding window (seconds) used for distinct-fingerprint counting per license.
+  windowSeconds: 86400
+  # Allowed distinct fingerprints in window. >1 lets a license run in N environments concurrently.
+  threshold: 1
+  # Grace count: extra fingerprints tolerated before flagging anomaly. Useful for short-lived containers.
+  graceCount: 0
+
+###################################
+# Monitoring
+###################################
+monitoring:
+  enabled: false
+  # Prometheus Operator ServiceMonitor for /metrics scraping.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+###################################
+# Default annotations / labels (applied to every workload)
+###################################
+labels: {}
+annotations: {}

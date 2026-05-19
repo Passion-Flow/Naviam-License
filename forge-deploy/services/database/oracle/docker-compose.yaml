@@ -1,0 +1,40 @@
+## Forge — Local Oracle XE for development
+##
+## 启动：cd services/database/oracle && docker compose up -d
+## ⚠️ Oracle 镜像许可限制；本配置只用于本地开发。
+## 客户私有化部署连客户自有 Oracle Database 19c/21c/23c 实例（不交付镜像）。
+##
+## 镜像选择：
+##   gvenzl/oracle-xe (社区维护 XE)            — 默认，体积约 2GB
+##   container-registry.oracle.com/database/free  — 官方 Free，需登录
+## 通过 ORACLE_IMAGE env 覆盖。
+
+name: forge-oracle
+
+services:
+  oracle:
+    image: "${ORACLE_IMAGE:-gvenzl/oracle-xe:21-slim-faststart}"
+    container_name: forge-oracle
+    restart: unless-stopped
+    ports:
+      - "${ORACLE_PORT:-11521}:1521"
+    environment:
+      ORACLE_PASSWORD: "${ORACLE_SYS_PASSWORD:?set ORACLE_SYS_PASSWORD in .env}"
+      APP_USER: "${ORACLE_USER:-forge_app}"
+      APP_USER_PASSWORD: "${ORACLE_PASSWORD:?set ORACLE_PASSWORD in .env}"
+      ORACLE_DATABASE: "${ORACLE_DATABASE:-FORGEPDB1}"
+      TZ: UTC
+    volumes:
+      - ./data:/opt/oracle/oradata
+      - ./init:/container-entrypoint-initdb.d:ro
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 5m
+
+networks:
+  default:
+    name: forge-oracle-net

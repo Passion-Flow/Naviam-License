@@ -1,0 +1,29 @@
+## Forge — Local Redis
+##
+## AOF + RDB 双开（与全局 03-Services/cache.md 硬性要求一致）
+
+name: forge-redis
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: forge-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    environment:
+      TZ: UTC
+    volumes:
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-Redis@!QAZxsw2.} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  default:
+    name: forge-redis-net

@@ -1,0 +1,55 @@
+# ------------------------------------------------------------------
+# stage: lint
+# Fast static checks; gate every later stage on these passing.
+# ------------------------------------------------------------------
+
+.lint-python:
+  stage: lint
+  image: $PYTHON_IMAGE
+  before_script:
+    - pip install --quiet ruff
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH'
+
+lint:server:
+  extends: .lint-python
+  script:
+    - ruff check Project-source/forge-server/
+
+lint:verifier-py:
+  extends: .lint-python
+  script:
+    - ruff check Project-source/forge-verifier/python/
+
+lint:admin:
+  stage: lint
+  image: $NODE_IMAGE
+  script:
+    - cd Project-source/forge-admin
+    - npm ci --silent
+    - npm run lint
+
+lint:helm:
+  stage: lint
+  image: $HELM_IMAGE
+  script:
+    - helm lint forge-deploy/helm/
+    - helm template forge-ci forge-deploy/helm/ > /tmp/render.yaml
+    - test -s /tmp/render.yaml
+
+lint:compose:
+  stage: lint
+  image: $DOCKER_IMAGE
+  services:
+    - $DOCKER_DIND_IMAGE
+  before_script:
+    - cp forge-deploy/docker/.env.example forge-deploy/docker/.env
+  script:
+    - docker compose -f forge-deploy/docker/docker-compose.yaml config --quiet
+
+# Version 一致性闸门 —— server / admin / chart 必须同版本
+lint:versions:
+  stage: lint
+  image: bash:5
+  script:
+    - bash forge-deploy/scripts/check-versions.sh
